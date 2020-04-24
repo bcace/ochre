@@ -1,0 +1,12 @@
+.vs
+Debug
+old
+doc
+*.sln
+*.vcxproj
+*.filters
+*.user
+cinnabar.*
+x64
+platform
+pthreadVC2.dll
