@@ -1,0 +1,50 @@
+Boids
+
+	point D.rand(-1., 1.).normalizeTo(vAvg)
+	point repulsion, alignment
+	int nRepulsion, nAlignment
+	type real Size, rRepulsion, rAlignment
+	type real vAvg, vRange
+
+set
+	Size = .2; rRepulsion = 2.; rAlignment = 10.
+	vAvg = .2; vRange = 0.04
+
+	env.set3DGrid(rAlignment)
+
+	int i = 0; while (i += 1) < 1000
+		Boids.new(env.randPoint())
+
+see Boids
+	point s = other.P - P
+	real l = s.length()
+
+	if  l < rAlignment {
+
+		point a = other.D
+		alignment += a.normalize()
+		nAlignment += 1
+
+		if l < rRepulsion {
+			repulsion += -s
+			nRepulsion += 1
+		}
+	}
+
+act
+	if nRepulsion
+		repulsion /= rRepulsion * real::nRepulsion
+
+	if nAlignment
+		alignment /= real::nAlignment
+
+	point gravity = 0.
+
+	if -env.contains(P)
+		gravity = (env.midPoint() - P).normalize()
+
+	D = (D + point.rand(D.length() * .1)).normalizeTo(vAvg) + (repulsion * .111 + alignment * .666 + gravity * .222) * vRange * .333
+	P += D
+
+	repulsion = alignment = 0.
+	nRepulsion = nAlignment = 0

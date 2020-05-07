@@ -1,0 +1,23 @@
+Handle
+
+	bool locked = false
+	type point Color
+	
+act
+	if locked {
+		if -env.cursorActive()
+			locked = false
+		else
+			P = env.nearestCursorRayPoint(P)
+	}
+	else {
+		
+		if env.cursorActive() {
+			point c = env.nearestCursorRayPoint(P)
+			if (c - P).length() < 1.
+				locked = true
+		}
+	}
+	
+set
+	Color = point.new(1., 0., 0.)

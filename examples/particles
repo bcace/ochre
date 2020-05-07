@@ -1,0 +1,45 @@
+Particle
+
+	point v.rand(0., .01), r = 0., Color = 0.
+	Color.x = 1.
+	type real Size, M, T	# mass, time
+
+set
+	Size = 1.; M = .01; T = .11
+	env.setBounds(50., 150., 50.)
+
+	int i = 0; while (i += 1) < 2000
+		Particle.new(env.randPoint())
+
+see Particle
+	point sep = other.P - P
+	real l = sep.length()
+	if l == 0.
+		r += -10.
+	else if l < 10.
+		r += -sep.normalizeTo(10. - l)
+
+act
+	point a = r * .1 / M			# acceleration
+	a.z -= 30.						# gravity
+	v += a * .5 * T					# velocity increment
+	P += v * T						# move
+	v *= .95						# dissipate
+	r = 0.							# reset force
+
+	if env.cursorActive() {
+		point m = env.nearestCursorRayPoint(P)
+		point sep = m - P
+		real l = sep.length()
+		if l == 0.
+			r = -30.
+		else if l < 30.
+			r = -sep.normalizeTo(30. - l)
+	}
+
+	Color.y = v.length() * .1
+	env.simpleBounce(P, v)
+
+do
+	env.setBounds(150., 100., 100.)
+ 	env.set3DGrid(15.)

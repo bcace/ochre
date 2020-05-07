@@ -1,0 +1,59 @@
+Node
+
+	refs:Node nodes
+	point r = 0., v = 0.
+	type real Size
+	
+set
+	Size = .3
+	env.set3DGrid(10.)
+	
+	local_refs:Node prevRow, currRow
+	
+	int i = -1; while (i += 1) <= 40 {		
+		int j = -1; while (j += 1) <= 40 {
+			
+			currRow.add(Node.new(point.new(real::i * 2.5, real::j * 2.5, 100.)))
+		
+			if j > 0 {
+				currRow:j.nodes.add(currRow:(j - 1))
+				currRow:(j - 1).nodes.add(currRow:j)
+			}
+			
+			if i > 0 {
+				currRow:j.nodes.add(prevRow:j)
+				prevRow:j.nodes.add(currRow:j)
+			}
+		}
+
+		prevRow = currRow
+		currRow.clear()
+	}
+	
+	requires Handle {
+		Handle.new(point.new(25., 50., 90.))
+		Handle.new(point.new(75., 50., 70.))
+		Handle.new(point.new(40., 50., 50.))
+	}
+
+see nodes
+	point s = other.P - P
+	r += -(2.5 - s.length()) * s.normalize()
+	
+see Handle
+	point s = other.P - P
+	if s.length() < 4.
+		r += -(4. - s.length()) * s.normalize()
+
+act
+	point f = r * .001
+	f.z -= .000001
+
+	v += (f / .00001) * .5 * .01
+	v.clampTo(1.)
+	v *= .99
+	P += v
+	
+	env.simpleBounce(P, v)
+	
+	r = 0.
