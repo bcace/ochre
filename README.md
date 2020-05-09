@@ -2,9 +2,9 @@
 
 ## What is Ochre
 
-Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language and simulation runtime focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping the agent behavior code as boilerplate-free as possible.
+Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping agent behavior code boilerplate-free.
 
-A nice side-effect of eliminating race conditions in the way Ochre does it is that resulting code is straightforward to parallelize. Live coding is also supported and in Ochre agent state data layouts get hot-reloaded as well as agent behavior code. Ochre also makes agent types modular so they can be easily combined into different models.
+Ochre also contains a simulation runtime that supports multithreaded simulation execution (which is done automatically because the code is race condition free), live coding (agent state data layouts get hot-reloaded as well as agent behavior code), and modularity of agent types so they can be easily reused in different models.
 
 ## What are race conditions and how are they relevant to ABM
 
@@ -34,7 +34,7 @@ foreach agent
 # xxxxxoo
 ```
 
-Say that this is the result of sequential reads and writes, and how different the results are depends on sequencing which, most importantly, is not under our control. Also say that the fact that those results so different is just a symptom of race condition and that it's not enough to say that those two results are similar, because the difference between those results and expected results is enormous. And if we're making a more complex model we don't really know what the expected result is (or at least if the code we wrote really produces the expected result), we only can see that depending on the way a simulation is executed (most commonly number of threads) the results differ and that should ring some alarms.
+This is the result of sequential reads and writes, and how different the results are depends on sequencing which, most importantly, is not under our control. The fact that those results are so different is just a symptom of race condition and that it's not enough to say that those two results are similar, because the difference between those results and expected results is enormous. And if we're making a more complex model we don't really know what the expected result is (or at least if the code we wrote really produces the expected result), we only can see that depending on the way a simulation is executed (most commonly by varying the number of threads) the results differ and that should ring some alarms.
 
 ^^ should mention random.
 
