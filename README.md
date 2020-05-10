@@ -1,7 +1,5 @@
 # Ochre
 
-## What is Ochre
-
 Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping agent behavior code boilerplate-free.
 
 Ochre also contains a simulation runtime that supports multithreaded simulation execution (which is done automatically because the code is race condition free), live coding (agent state data layouts get hot-reloaded as well as agent behavior code), and modularity of agent types so they can be easily reused in different models.
@@ -14,7 +12,7 @@ During a simulation step each agent acts and interacts with, and in parallel to,
 
 Interactions between agents are done by agents directly reading from or writing into each other's memory. This of course raises the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race), and usually those are resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or just not executing anything in parallel at all. Either way, we introduce sequences into these reads and writes and get race conditions.
 
-Following simple example shows how easy it is to get a data race and how different the results can be from the expected end state. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either of them has `+` its state also becomes `+`.
+Following simple example shows how easy it is to get a data race and how different the results can be from the expected end state. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either one of them has `+` its state also becomes `+`.
 
 ```
 # initial state
@@ -26,13 +24,15 @@ foreach cell
 
 # expected end state
 #   ---+++---
-# actual end state if going left to right
+# actual end state with left to right sequence
 #   ---++++++
-# actual end state if going right to left
+# actual end state with right to left sequence
 #   ++++++---
 ```
 
-This is the result of sequential reads and writes, and how different the results are depends on sequencing which, most importantly, is not under our control. The fact that those results are so different is just a symptom of race condition and that it's not enough to say that those two results are similar, because the difference between those results and expected results is enormous. And if we're making a more complex model we don't really know what the expected result is (or at least if the code we wrote really produces the expected result), we only can see that depending on the way a simulation is executed (most commonly by varying the number of threads) the results differ and that should ring some alarms.
+First thing to note is that sequencing is either not under our control (e.g. thread scheduler controls thread execution), or in case of single threaded execution (where we could enforce consistent sequencing) we could get consistent results but still have race condition because this sequencing is not tied semantically to the model.
+
+Other thing to note is that the fact that the simulation produces different results when executed on a different number of threads, and even if those results are similar in some way, this could be a symptom of a race condition, and if it was fixed it could produce completely different results. In the above example we could say that both results have the same number of '+', but we see how this number is different from the expected number. The problem is that in any sufficiently complex model we either don't know what the expected result is, or we only *believe* that the code we wrote produced expected results in a correct way. In these cases we should take the inconsistency of simulation results when running on different number of threads as a symptom of a possible race condition.
 
 #### Once we have sequencing we have RC
 
@@ -43,6 +43,7 @@ WW - always to the back buffer, and always accumulating, never just writing
 
 Because we want the communication (accumulation in all the back buffers) to appear as if it happened all at the same time, instantaneously. The same with switching buffers. Here *appear* is the most iportant word, because at the point back buffer is being built, it is not visible by anyone, in fact everyone just sees the front buffer.
 In short, whenever you want a complicated multi-step change to appear as instantaneous.
+also, duble buffering doesn't mean that you can have the same variable in two different buffers, sometimes it's two different but related variables (agent position and resulting force on an agent from its neighbors).
 
 #### What is accumulation and why?
 
