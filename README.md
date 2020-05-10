@@ -6,50 +6,33 @@ Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focu
 
 Ochre also contains a simulation runtime that supports multithreaded simulation execution (which is done automatically because the code is race condition free), live coding (agent state data layouts get hot-reloaded as well as agent behavior code), and modularity of agent types so they can be easily reused in different models.
 
-## What are race conditions and how are they relevant to ABM
+## How are race conditions relevant to ABM
 
-- Simulation iterations.
-- Model state is made up of agent states.
-- Model state should change from t1 to t2 deterministically.
-- Each agent acts in parallel to the others.
-- Agents communicate by means of shared memory, communication means reading and writing memory directly, one agent can read or write other agent's state.
-- There can be no effects of ordering of operations on how model transitions from one state to the next.
+Agent-based model state consists of individual agents' states and at each simulation step this state should change deterministically if no randomness is intentionally introduced.
 
-Wavefront example:
+During a simulation step each agent acts and interacts with, and in parallel to, other agents. Here "in parallel" just means that agents should *appear* as if they're running in parallel, the end result of their actions and interactions should be the same regardless of how their behavior is actually executed, and the actual execution can vary between running everything in a single thread or each agent running in its own thread.
+
+Interactions between agents are done by agents directly reading from or writing into each other's memory. This of course raises the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race), and usually those are resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or just not executing anything in parallel at all. Either way, we introduce sequences into these reads and writes and get race conditions.
+
+Following simple example shows how easy it is to get a data race and how different the results can be from the expected end state. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either of them has `+` its state also becomes `+`.
 
 ```
-# initial state:
-# oooxooo
-# expected end state after first step:
-# ooxxxoo
+# initial state
+#   ----+----
 
-foreach agent
-    if agent.left.value == X or agent.right.value == X
-        agent.value = X
+foreach cell
+    if cell.left_neighbor.state == '+' or cell.right_neighbor.state == '+'
+        cell.state = '+'
 
-# end state if going left to right
-# ooxxxxx
-
-# end state if going right to left
-# xxxxxoo
+# expected end state
+#   ---+++---
+# actual end state if going left to right
+#   ---++++++
+# actual end state if going right to left
+#   ++++++---
 ```
 
 This is the result of sequential reads and writes, and how different the results are depends on sequencing which, most importantly, is not under our control. The fact that those results are so different is just a symptom of race condition and that it's not enough to say that those two results are similar, because the difference between those results and expected results is enormous. And if we're making a more complex model we don't really know what the expected result is (or at least if the code we wrote really produces the expected result), we only can see that depending on the way a simulation is executed (most commonly by varying the number of threads) the results differ and that should ring some alarms.
-
-^^ should mention random.
-
-#### How does Ochre approach this problem
-
-#### If we assume there are not data races
-
-[data races](https://en.wikipedia.org/wiki/Race_condition#Data_race)
-Start with assuming that all data races are fixed. How things are scheduled to achieve this doesn't matter, the only thing is that two writes to the same memory never happen at the same time, and one read and one write don't happen at the same time. Doesn't matter how, it's clear that this has to happen.
-Either because everything is executed on a single processor, or there's mutexes.
-
-#### From that we get sequential WW and RW
-
-From that we know that there's sequencing issues, and it's exactly this sequencing that cannot have any effect on the final model state.
-Why? Probably because this sequencing doesn't have anything to do with time. You could schedule things, and have complete control over sequencing, but what value in the model itself do you tie this sequencing to?
 
 #### Once we have sequencing we have RC
 
@@ -92,8 +75,7 @@ as long as the condition only tests available **front** state it's OK.
 
 
 ```
-
-# either of the following two can be used, but not both at the same time
+// either of the following two can be used, but not both at the same time
 acc += v # could be unrolled to acc = v1 + v2 + v3 + ... + vn, that's why the read-only and write-only rule still applies
 acc *= v
 
@@ -116,16 +98,17 @@ if something == true
     acc += 1
 ```
 
-#### Ochre example
-
-`see` section for accumulating the back buffer, `act` section for switching buffers (voila, here's the new state!). Back buffer being `private` variables and front buffer `public` variables.
-
 ## Parallel execution
 
+- Nice thing about solving race conditions first is that most data races disappear
 - Once race conditions are eliminated parallelizing the simulation execution is trivial.
 - Grid spatial partitioning, how bucketing for threads works and how the grid cells are actually infinite at its sides and edges.
 1. How many ways can you double-buffer code? (there's at least Ochre's see and mod - what's the difference?)
 2. After being double-buffered how does it parallelize?
+
+#### Ochre example
+
+`see` section for accumulating the back buffer, `act` section for switching buffers (voila, here's the new state!). Back buffer being `private` variables and front buffer `public` variables.
 
 ## Live coding
 
