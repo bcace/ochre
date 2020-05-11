@@ -1,103 +1,75 @@
 # Ochre
 
-Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping agent behavior code boilerplate-free.
+Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping agent behavior code boilerplate-free. Ochre simulation runtime supports multithreaded simulation execution, live coding, and modularity of agent types so they can be easily reused in different models.
 
-Ochre also contains a simulation runtime that supports multithreaded simulation execution (which is done automatically because the code is race condition free), live coding (agent state data layouts get hot-reloaded as well as agent behavior code), and modularity of agent types so they can be easily reused in different models.
+## Race conditions in ABM
 
-## How are race conditions relevant to ABM
+At each simulation step agents interact with each other, and each of those interactions is a parallel logical process that changes agent states. Since we want to keep the simulation deterministic varying the number of threads or physical processes in which those logical processes are executed should not change the simulation results or the sequence of states the model goes through.
 
-Agent-based model state consists of individual agents' states and at each simulation step this state should change deterministically if no randomness is intentionally introduced.
+Most efficient interaction between agents is direct exchange of data in shared memory, which introduces the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race), and data races are usually resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or simply executing everything sequentially. Either way, we solve data races by sequencing reads and writes and transform the problem from data races into race conditions.
 
-During a simulation step each agent acts and interacts with, and in parallel to, other agents. Here "in parallel" just means that agents should *appear* as if they're running in parallel, the end result of their actions and interactions should be the same regardless of how their behavior is actually executed, and the actual execution can vary between running everything in a single thread or each agent running in its own thread.
-
-Interactions between agents are done by agents directly reading from or writing into each other's memory. This of course raises the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race), and usually those are resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or just not executing anything in parallel at all. Either way, we introduce sequences into these reads and writes and get race conditions.
-
-Following simple example shows how easy it is to get a data race and how different the results can be from the expected end state. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either one of them has `+` its state also becomes `+`.
+The following example shows how easy it is to get a race condition and how different the end state is from what we expect. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either one of them has `+` its state also becomes `+`.
 
 ```
 # initial state
 #   ----+----
+# expected end state
+#   ---+++---
 
-foreach cell
+foreach cell in cells
     if cell.left_neighbor.state == '+' or cell.right_neighbor.state == '+'
         cell.state = '+'
 
-# expected end state
-#   ---+++---
-# actual end state with left to right sequence
-#   ---++++++
-# actual end state with right to left sequence
-#   ++++++---
+# actual end state
+#   ---++++++  # left to right
+#   ++++++---  # right to left
 ```
 
-First thing to note is that sequencing is either not under our control (e.g. thread scheduler controls thread execution), or in case of single threaded execution (where we could enforce consistent sequencing) we could get consistent results but still have race condition because this sequencing is not tied semantically to the model.
+How these interactions are sequenced is either not under our control (e.g. thread scheduler controls thread execution), or in case of single threaded execution, where we could enforce consistent sequencing, we could get consistent results but still have race conditions because the sequencing we forced is not tied semantically to the model.
 
-Other thing to note is that the fact that the simulation produces different results when executed on a different number of threads, and even if those results are similar in some way, this could be a symptom of a race condition, and if it was fixed it could produce completely different results. In the above example we could say that both results have the same number of '+', but we see how this number is different from the expected number. The problem is that in any sufficiently complex model we either don't know what the expected result is, or we only *believe* that the code we wrote produced expected results in a correct way. In these cases we should take the inconsistency of simulation results when running on different number of threads as a symptom of a possible race condition.
+Also, the differences between results we get with race conditions could relatively small, but the very fact they exist could be a sign that if we fix race conditions results could be vastly different. So in this simple example we know what the expected result is and we can easily evaluate the result we get, but in any sufficiently complex model we either don't know what the expected result is, or we only *believe* that the code we wrote produced expected results in a correct way. In these cases we should take the inconsistency of simulation results when running on different number of threads as a symptom of a possible race condition.
 
-#### Once we have sequencing we have RC
+### Untangling reads and writes
 
-RW - double buffering
-WW - always to the back buffer, and always accumulating, never just writing
+If we assume that all reads and writes are sequential we just have to eliminate the *effects* of sequential reads and writes between parallel logical processes.
 
-#### Why double buffering?
+#### Read/write
 
-Because we want the communication (accumulation in all the back buffers) to appear as if it happened all at the same time, instantaneously. The same with switching buffers. Here *appear* is the most iportant word, because at the point back buffer is being built, it is not visible by anyone, in fact everyone just sees the front buffer.
-In short, whenever you want a complicated multi-step change to appear as instantaneous.
-also, duble buffering doesn't mean that you can have the same variable in two different buffers, sometimes it's two different but related variables (agent position and resulting force on an agent from its neighbors).
-
-#### What is accumulation and why?
-
-Accumulating the back buffer should be done using only [commutative](https://en.wikipedia.org/wiki/Commutative_property) operations (never their combinations): operations which produce a result that doesn't depend on their order.
-
-If we say `a = Vi` and unroll that over the sequence:
+The problem of reading from and writing to same memory we can solve by double-buffering - agents can read each other's "front" data while their "back" data is being built. In the above example that would mean we have to split the `state` variable into "back" and "front" parts. We only read from the "front" variable and only write to the "back" variable:
 
 ```
-a = V1
-a = V2
-a = V3
-...
-a = Vn
+foreach cell in cells
+    if cell.left_neighbor.front_state == '+' or cell.right_neighbor.front_state == '+'
+        cell.back_state = '+'
 ```
 
-If we do `a += Vi` and unroll:
+and after all "back" values are updated, "front" values can be updated from them (buffer swap):
 
 ```
-a = V1 + V2 + V3 + ... + Vn
+foreach cell in cells
+    cell.front_state = cell.back_state
 ```
 
-that `a =` assignment is ok as long as it means that all of the Vi elements had the same chance of getting into the sum. Even if we do it conditionally:
+#### Write/write
+
+So after we double buffered the variables we can still see that the innermost statement of the "back" buffer building pass contains an assignment, which means that we still have the problem of writing to the same memory from different logical processes.
+
+Writing to same memory form different logical processes can be solved by accumulation - when "back" data is being built we have to make sure that operations building it are [commutative](https://en.wikipedia.org/wiki/Commutative_property), in other words we can only use operations that produce the same result regardless of the ordering of their operands. In the above code `or` operator is commutative...
+
+Similarly we could write either `a += Ai` or `a *= Ai` but we cannot mix them, so:
 
 ```
-if something < something_else
-    a += Vi
+a = A1 + A2 + A3 + ... + An
+b = B1 * B2 * B3 * ... * Bn
 ```
 
-as long as the condition only tests available **front** state it's OK.
-
+works but `a += Ai; a *= Bi` doesn't because unrolled it would look like this:
 
 ```
-// either of the following two can be used, but not both at the same time
-acc += v # could be unrolled to acc = v1 + v2 + v3 + ... + vn, that's why the read-only and write-only rule still applies
-acc *= v
-
-# cannot be used
-acc -= v
-acc /= v
-
-# special case that could work but requires checking whether an expression is commutative
-acc = acc + v
-
-# this works only if when iterating later we disregard the ordering, and we disregard ordering by not
-# allowing random access and whenever we process elements we process all of them in the same way
-collection.add(element)
-
-# element is added if result of expression is minimal. There can be multiple minimal or maximal elements.
-mincollection.add(element, element.x)
-
-# accumulating conditionally is also OK
-if something == true
-    acc += 1
+a = (((A1 * B1 + A2) * B2 + A3) * B3 + ... + An) * Bn
 ```
+
+does not. Obviously `a -= Ai` would not work because `-` is not commutative. Even collections work if we limit how they're updated and how their elements are inspected. When building a collection as part of the "back" buffer we can only allow adding elements to the collection. Then, when reading it as part of the "front" buffer we only have to ensure that whatever we want to do with its elements we do *equally* to *all* elements, no random access to specific elements.
 
 ## Parallel execution
 
