@@ -73,7 +73,13 @@ does not. Obviously `a -= Ai` would not work because `-` is not commutative. Eve
 
 ## Ochre spin on the above
 
-As mentioned at the beginning these rules for eliminating race conditions have to be somehow turned into a concise programming language that doesn't require struggling with parallel reads and writes at every line of code and at the same time be flexible enough to allow expressing most forms of agent action and interaction in an intuitive way. As a bonus it should generate executable code that can be safely executed on multiple threads.
+As mentioned at the beginning these rules for eliminating race conditions have to be somehow turned into a concise programming language that doesn't require struggling through parallel reads and writes at every line of code and at the same time be flexible enough to allow expressing most forms of agent action and interaction in an intuitive way. As a bonus it should generate executable code that can be safely executed on multiple threads.
+
+First some general things you need to know about the language and its runtime before we go into more details:
+* There are no explicit loops to process agents and their interactions, you write code acting on a single agent or pairs of agents and runtime decides how to use the code and when.
+* Interaction sections of agent behavior code always describe interactions between two agents provided by the runtime through `this` and `other` references. Interaction sections are written from the perspective of the `this` agent and in most cases it can be omitted.
+* Interaction can be defined for cases when agents are close enough to each other (proximity), or when we want all interactions to go through references (direct links between agents).
+* Proximity is a global property of the simulation environment and can be changed at run-time.
 
 Each agent type is defined in its own file, first non-comment line contains the type name, and the rest of the file is divided into *sections*:
 
@@ -86,7 +92,7 @@ int i # agent's "back" variable
 int I # agent's "front" variable
 ```
 
-* `set` section: used to create and initialize agents of this type. In this section there are no limitations on how any variable is used.
+* `set` section: used to create and initialize agents. In this section there are no limitations on how variables are used.
 
 * `see` section: used to define how agents "see" their environment. Multiple `see` sections can be defined, depending on which agent type the current agent type should interact and whether they should interact only if close enough or only if they have a direct link.
 
@@ -103,6 +109,13 @@ see B
 see neighbors
     i += other.K
 ```
+
+| | front | back
+| --- | --- | ---
+| this | read | accumulate
+| other | read | -
+| type | read | read
+| local | read and write | read and write
 
 * `mod`
 
