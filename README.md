@@ -52,7 +52,7 @@ foreach cell in cells
 
 #### Write/write
 
-So after we double buffered the variables we can still see that the innermost statement of the "back" buffer building pass contains an assignment, which means that we still have the problem of writing to the same memory from different logical processes.
+So after we double-buffered the variables we can still see that the innermost statement of the "back" buffer building pass contains an assignment, which means that we still have the problem of writing to the same memory from different logical processes.
 
 Writing to same memory form different logical processes can be solved by accumulation - when "back" data is being built we have to make sure that operations building it are [commutative](https://en.wikipedia.org/wiki/Commutative_property), in other words we can only use operations that produce the same result regardless of the ordering of their operands. In the above code `or` operator is commutative...
 
@@ -71,59 +71,64 @@ a = (((A1 * B1 + A2) * B2 + A3) * B3 + ... + An) * Bn
 
 does not. Obviously `a -= Ai` would not work because `-` is not commutative. Even collections work if we limit how they're updated and how their elements are inspected. When building a collection as part of the "back" buffer we can only allow adding elements to the collection. Then, when reading it as part of the "front" buffer we only have to ensure that whatever we want to do with its elements we do *equally* to *all* elements, no random access to specific elements.
 
-## Parallel interactions in Ochre
+## Concurrency safety in Ochre
 
-Double-buffering and accumulation are easy to understand on simple examples, but in a more complex model it's easy to lose track of the simulation step structure, how to separate code into logical processes and how to safely exchange data between them. The point of Ochre is to establish a higher level set of rules based on double-buffering and accumulation that are easier to comprehend and are still flexible enough for expressing various forms of agent interactions intuitively. Also as a consequence of these rules it's easy for Ochre to generate executable code that can be safely executed on multiple threads.
+    The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. Also, as a consequence of code being expressed in terms of double-buffering and accumulation it's easy for the Ochre runtime to safely execute the code on arbitrary number of threads.
 
-A few general things to understand about the language and its runtime before going into more details:
-* There are no explicit loops to process agents and their interactions, you write code acting on a single agent or pairs of agents and runtime decides how to use the code and when.
-* Interaction sections of agent behavior code always describe interactions between two agents provided by the runtime through `this` and `other` references. Interaction sections are written from the perspective of the `this` agent and in most cases it can be omitted.
-* Interaction can be defined for cases when agents are close enough to each other (proximity), or when we want all interactions to go through references (direct links between agents).
-* Proximity is a global property of the simulation environment and can be changed at run-time.
+    To be able to base the semantic analysis on double-buffering and accumulation concepts following information must be known:
+        1. which code belongs to which double-buffering phase,
+        2. which memory (agent variables) belongs to the back of front buffer, and
+        3. how all operators and functions interact with data in terms of reading, writing and accumulation.
 
-Each agent type is defined in its own file, first non-comment line contains the type name, and the rest of the file is divided into *sections*:
+    1. Simulation steps are divided into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit - you just write code that plugs into loops corresponding to phases.
 
-* `set` section: used to create and initialize agents. In this section there are no limitations on how variables are used.
+    2. We also have to know what IS the back and front buffer, and agent variables are simply divided into front and back variables. And if you know exactly for all operators and functions whether they write, read or accumulate data you have everything you need for double buffering and accumulation.
 
-* `see` section: used to define how agents "see" their environment. Multiple `see` sections can be defined, depending on which agent type the current agent type should interact and whether they should interact only if close enough or only if they have a direct link.
+    3. All operators and functions that interact with data must be annotated.
 
-```
-# agents of type A "see" other agents of the same type, if they're closer than the interaction distance
-see A
-    i += other.I
+Second pass. Elaborate on things from above plus snippets.
 
-# agents of type A "see" agents of type B, if they're closer than the interaction distance
-see B
-    i += other.J
+    Each agent type is defined in its own file, and the file is divided into sections where each section contains code for a specific simulation step phase.
 
-# agents of type A "see" agents contained in the "neighbors" agent references collection
-see neighbors
-    i += other.K
-```
+    ```
+    TypeA # first non-comment line is the type name
 
-| | front | back
-| --- | --- | ---
-| this | read | accumulate
-| other | read | -
-| type | read | read
-| local | read and write | read and write
+        # immediately following are declarations of agent variables
+        point P
+    ```
 
-* `mod`
+    An agent type can have only one action phase section (`act`) and it's simply a block of code that's applied on each agent, and the Ochre runtime decides how to distribute agents among worker threads and apply this block of code on each agent.
 
-* `act`
+    ```
+    act
+        # at each simulation step each agent moves by 1 along x axis
+        P.x += 1
+    ```
 
-* `do`
+    Interaction sections are also just blocks of code, but they act on pairs of agents: `this` and `other` (`this` reference can be implicit).
 
-An agent type can have multiple interaction (`see` and `mod`) sections defined, one for each type it has to interact with. If a type is not currently loaded
-- agent type oriented
-- each type defines blocks of code that gets executed by the runtime at certain times and
+    ```
+    see TypeA
+        # agent counts neighbors that are closer than 10
+        if (P - other.P).length() < 10
+            neighbors_count += 1
+    ```
 
-```
-see neighbors
-    if other.is_plus
-        neighbors_with_pluses += 1
+    There can be multiple interaction phase sections defined for an agent type, one for each agent type it wants to interact with:
 
-act
-    if neighbors_with_pluses > 0
-        is_plus = 1
-```
+    ```
+    # interaction with agents of the same type
+    see TypeA
+        ...
+
+    # interaction with agents of type TypeB
+    # if TypeB is not loaded into the environment this section is ignored
+    see TypeB
+        ...
+    ```
+
+    Interaction sections can also differ with regards to how it's decided which agents should interact: proximity and direct references. When a type name follows the `see` keyword that means that the section will be only applied to pairs of agents if they're close enough to each other. This interaction range... {{{{{{}}}}}}
+
+    - for each type of interaction, see or mod
+
+    How double-buffering and accumulation is enforced in these sections
