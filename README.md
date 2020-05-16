@@ -73,60 +73,72 @@ does not. Obviously `a -= Ai` would not work because `-` is not commutative. Eve
 
 ## Concurrency safety in Ochre
 
-    The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
-        1. which code belongs to which double-buffering phase,
-        2. which memory (agent variables) belongs to which buffer (front/back),
-        3. how operators and functions interact with data in terms of reading, writing and accumulation.
+The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
+    1. which code belongs to which double-buffering phase,
+    2. which memory (agent variables) belongs to which buffer (front/back),
+    3. how operators and functions interact with data in terms of reading, writing and accumulation.
 
-    1. Simulation steps are split into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit, allowing the Ochre runtime to distribute work among worker threads and synchronize them.
+1. Simulation steps are split into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit, allowing the Ochre runtime to distribute work among worker threads and synchronize them.
 
-    2. All agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
+2. All agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
 
-    3. Each operator or function argument and result is annotated with information on how it's used: whether it's read, written to or accumulated.
+3. Each operator or function argument and result is annotated with information on how it's used: whether it's read, written to or accumulated.
 
 #### Anatomy of an Ochre agent type
 
-    Each agent type is defined in its own file, and the file is divided into sections where each section contains code for a specific simulation step phase.
+Each agent type is defined in its own file, and the file is divided into sections where each section contains code for a specific simulation step phase.
 
-    ```
-    TypeA # first non-comment line is the type name
+Agent variable is a *back* variable if the first character is lowercase, *front* variable if uppercase.
 
-        # immediately following are declarations of agent variables
-        point P
-    ```
+```
+TypeA # first non-comment line is the type name
 
-    An agent type can have only one action phase section (`act`) and it's simply a block of code that's applied on each agent, and the Ochre runtime decides how to distribute agents among worker threads and apply this block of code on each agent.
+    # declarations of agent variables
+    bool backVariable
+    int FrontVariable
+```
 
-    ```
-    act
-        # at each simulation step each agent moves by 1 along x axis
-        P.x += 1
-    ```
+**Interaction sections**
 
-    Interaction sections are also just blocks of code, but they act on pairs of agents: `this` and `other` (`this` reference can be implicit).
+Interaction sections are also just blocks of code, but they act on pairs of agents: `this` and `other` (`this` reference can be omitted (implicit)).
 
-    ```
-    see TypeA
-        # agent counts neighbors that are closer than 10
-        if (P - other.P).length() < 10
-            neighbors_count += 1
-    ```
+```
+see TypeA
+    # agent counts neighbors that are closer than 10
+    if (Position - other.Position).length() < 10
+        neighborsCount += 1
+```
 
-    There can be multiple interaction phase sections defined for an agent type, one for each agent type it wants to interact with:
+Here we see that the code reads from *front* variables (`[this.]Position` and `other.Position`) and accumulates the `[this.]neighborsCount` variable, which conforms to both double-buffering and accumulation rules. Ochre rules for agent variables in `see` sections are:
 
-    ```
-    # interaction with agents of the same type
-    see TypeA
-        ...
+| | front | back
+| --- | --- | ---
+| this | read | accumulate
+| other | read | -
 
-    # interaction with agents of type TypeB
-    # if TypeB is not loaded into the environment this section is ignored
-    see TypeB
-        ...
-    ```
+There can be multiple interaction phase sections defined for an agent type, one for each agent type it wants to interact with:
 
-    Interaction sections can also differ with regards to how it's decided which agents should interact: proximity and direct references. When a type name follows the `see` keyword that means that the section will be only applied to pairs of agents if they're close enough to each other. This interaction range... {{{{{{}}}}}}
+```
+# interaction with agents of the same type
+see TypeA
+    ...
 
-    - for each type of interaction, see or mod
+# interaction with agents of type TypeB
+# if TypeB is not loaded into the environment this section is ignored
+see TypeB
+    ...
+```
 
-    How double-buffering and accumulation is enforced in these sections
+Interaction sections can also differ with regards to how it's decided which agents should interact: proximity and direct references. When a type name follows the `see` keyword that means that the section will be only applied to pairs of agents if they're close enough to each other. This interaction range... {{{{{{}}}}}}
+
+- for each type of interaction, see or mod
+
+**Action section**
+
+An agent type can have only one action phase section (`act`) and it's simply a block of code that's executed for each agent, and the Ochre runtime decides how to distribute agents among worker threads.
+
+```
+act
+    # at each simulation step each agent moves by 1 along x axis
+    P.x += 1
+```
