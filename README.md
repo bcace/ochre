@@ -82,13 +82,13 @@ The purpose of Ochre as a language is to ensure concurrency safety with a set of
 
 2. All agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
 
-3. Each operator or function argument and result is annotated with information on how it's used: whether it's read, written to or accumulated.
+3. Each operator and function is annotated with information on how it uses its arguments and how its result can be used: read, write or accumulate.
 
 #### Anatomy of an Ochre agent type
 
-Each agent type is defined in its own file, and the file is divided into sections where each section contains code for a specific simulation step phase.
+{{{ a description of what this language actually looks like, very simplified, lots of stuff missing for simplicity }}}
 
-Agent variable is a *back* variable if the first character is lowercase, *front* variable if uppercase.
+Each agent type is defined in its own file, and the file is divided into sections. First section contains the Type name and declaration of agent and type variables. Agent variable is a *back* variable if the first character is lowercase, and a *front* variable if uppercase.
 
 ```
 TypeA # first non-comment line is the type name
@@ -100,7 +100,7 @@ TypeA # first non-comment line is the type name
 
 **Interaction sections**
 
-Interaction sections are also just blocks of code, but they act on pairs of agents: `this` and `other` (`this` reference can be omitted (implicit)).
+Multiple interaction sections can be defined, but they are all part of the simulation step phase where back buffers are accumulated. Interaction sections are just blocks of code, and they act on pairs of agents: `this` and `other` (`this` reference can be omitted (implicit)). Interaction code is always written from the perspective of the `this` agent, and it will be executed for all agents of the type.
 
 ```
 see TypeA
@@ -109,29 +109,35 @@ see TypeA
         neighborsCount += 1
 ```
 
-Here we see that the code reads from *front* variables (`[this.]Position` and `other.Position`) and accumulates the `[this.]neighborsCount` variable, which conforms to both double-buffering and accumulation rules. Ochre rules for agent variables in `see` sections are:
+In this snippet *front* variables (`[this.]Position` and `other.Position`) are being read and the *back* `[this.]neighborsCount` variable is accumulated, which conforms to both double-buffering and accumulation rules. Ochre rules for agent variables in `see` sections are:
 
 | | front | back
 | --- | --- | ---
 | this | read | accumulate
 | other | read | -
 
-There can be multiple interaction phase sections defined for an agent type, one for each agent type it wants to interact with:
+Which agents are going to be the `other` agent in that section is determined by the section statement argument (`see TypeA`). If type name is used, any agent of that type close enough to `this` agent will be the `other` agent. How close the agents have to be is determined by the size of the environment grid cell size. Agents can interact with other agents in the same cell or the neighboring cells.
 
 ```
 # interaction with agents of the same type
 see TypeA
-    ...
+    # "this" will be a reference to a TypeA agent
+    # "other" will be a reference to a different TypeA agent
 
 # interaction with agents of type TypeB
-# if TypeB is not loaded into the environment this section is ignored
+# ignored if TypeB is not loaded into the Ochre environment
 see TypeB
-    ...
+    # "this" will be a reference to a TypeA agent
+    # "other" will be a reference to a TypeB agent
 ```
 
-Interaction sections can also differ with regards to how it's decided which agents should interact: proximity and direct references. When a type name follows the `see` keyword that means that the section will be only applied to pairs of agents if they're close enough to each other. This interaction range... {{{{{{}}}}}}
+Another way of specifying which agents will interact is through direct references. Agents can have collections of agent references as its variables, and interaction section is declared by just passing the variable name as the `see` statement argument:
 
-- for each type of interaction, see or mod
+```
+see collectionOfAgents
+    # "this" will be a reference to a TypeA agent
+    # "other" will be a reference to one of the agents in collectionOfAgents
+```
 
 **Action section**
 
@@ -142,3 +148,7 @@ act
     # at each simulation step each agent moves by 1 along x axis
     P.x += 1
 ```
+
+**Grid**
+
+...
