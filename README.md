@@ -73,20 +73,18 @@ does not. Obviously `a -= Ai` would not work because `-` is not commutative. Eve
 
 ## Concurrency safety in Ochre
 
-    The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. Also, as a consequence of code being expressed in terms of double-buffering and accumulation it's easy for the Ochre runtime to safely execute the code on arbitrary number of threads.
-
-    To be able to base the semantic analysis on double-buffering and accumulation concepts following information must be known:
+    The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
         1. which code belongs to which double-buffering phase,
-        2. which memory (agent variables) belongs to the back of front buffer, and
-        3. how all operators and functions interact with data in terms of reading, writing and accumulation.
+        2. which memory (agent variables) belongs to which buffer (front/back),
+        3. how operators and functions interact with data in terms of reading, writing and accumulation.
 
-    1. Simulation steps are divided into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit - you just write code that plugs into loops corresponding to phases.
+    1. Simulation steps are split into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit, allowing the Ochre runtime to distribute work among worker threads and synchronize them.
 
-    2. We also have to know what IS the back and front buffer, and agent variables are simply divided into front and back variables. And if you know exactly for all operators and functions whether they write, read or accumulate data you have everything you need for double buffering and accumulation.
+    2. All agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
 
-    3. All operators and functions that interact with data must be annotated.
+    3. Each operator or function argument and result is annotated with information on how it's used: whether it's read, written to or accumulated.
 
-Second pass. Elaborate on things from above plus snippets.
+#### Anatomy of an Ochre agent type
 
     Each agent type is defined in its own file, and the file is divided into sections where each section contains code for a specific simulation step phase.
 
