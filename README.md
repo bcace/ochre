@@ -1,79 +1,95 @@
 # Ochre
 
-Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) while keeping agent behavior code boilerplate-free. Ochre simulation runtime supports multithreaded simulation execution, live coding, and agent type modularity.
+Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) programming language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) and keeping the code boilerplate-free. Ochre simulation runtime also supports multithreaded simulation execution, live coding and agent type modularity.
 
 ## Race conditions in ABM
 
+This is the primary focus of Ochre because I believe that race conditions are ubiquitous in ABM, and ABM modeling tools that don't address race conditions in some way seem to me a bit... incomplete.
+
 At each simulation step agents interact with each other, and each of those interactions is a parallel logical process during which agent state is changed. Since we want to keep the simulation deterministic, varying the number of threads or physical processes in which those logical processes are executed should not change the simulation results or the sequence of states the model goes through.
 
-Most efficient interaction between agents is by direct exchange of data in shared memory, which introduces the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race), and data races are usually resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or simply executing everything sequentially. Either way, we solve data races by sequencing reads and writes and transform the problem from data races into race conditions.
+Most efficient interaction between agents can be achieved by direct exchange of data in shared memory, which introduces the possibility of [data races](https://en.wikipedia.org/wiki/Race_condition#Data_race). Data races are usually resolved by either not accessing memory directly (message passing), reading and writing using atomic operations, or simply executing everything sequentially. Either way, we solve data races by sequencing reads and writes and in effect transform the problem from data races into race conditions.
 
-The following example shows how easy it is to get a race condition and how different the end state is from what we expect. Consider a row of cells whose state consists of only one variable containing either `+` or `-`. At each step each cell looks at its immediate neighbors and if either one of them has `+` its state also becomes `+`.
+The following example shows how easy it is to get race conditions and how different the end state is from what we expect. Consider a row of [cellular automata](https://en.wikipedia.org/wiki/Cellular_automaton) whose state is either 1 or 0. At each step each cell looks at adjacent cells and if either one of them is 1 its state also becomes 1.
 
 ```
 # initial state
-#   ----+----
+#   000010000
 # expected end state
-#   ---+++---
+#   000111000
 
 foreach cell in cells
-    if cell.left_neighbor.state == '+' or cell.right_neighbor.state == '+'
-        cell.state = '+'
+    if cell.left_neighbor.state == 1 or cell.right_neighbor.state == 1
+        cell.state = 1
 
 # actual end state
-#   ---++++++  # left to right
-#   ++++++---  # right to left
+#   000111111  # left to right
+#   111111000  # right to left
 ```
 
 How these interactions are sequenced is either not under our control (e.g. thread scheduler controls thread execution), or in case of single threaded execution, where we could enforce consistent sequencing, we could get consistent results but still have race conditions because the sequencing we forced is not tied semantically to the model.
 
-Also, the differences between results we get with race conditions could relatively small, but the very fact they exist could be a sign that if we fix race conditions results could be vastly different. So in this simple example we know what the expected result is and we can easily evaluate the result we get, but in any sufficiently complex model we either don't know what the expected result is, or we only *believe* that the code we wrote produced expected results in a correct way. In these cases we should take the inconsistency of simulation results when running on different number of threads as a symptom of a possible race condition.
+Also, the differences between results we get with race conditions could be relatively small, but the fact they exist could be a sign that if we fix race conditions results could be vastly different. So in this simple example we know what the expected result is and we can easily evaluate the result we actually get, but in any sufficiently complex model we either don't know what the expected result is, or we only *believe* that the code we wrote produces expected results in a correct way. In these cases we should take the inconsistency of simulation results when running on different number of threads as a symptom of possible race condition.
 
 ### Untangling reads and writes
 
 If we assume that all reads and writes are sequential we just have to eliminate the *effects* of sequential reads and writes between parallel logical processes.
 
-#### Read/write
+#### Read/write (double buffering)
 
-The problem of reading from and writing to same memory we can solve by double-buffering - agents can read each other's "front" data while their "back" data is being built. In the above example that would mean we have to split the `state` variable into "back" and "front" parts. We only read from the "front" variable and only write to the "back" variable:
+The problem of reading from and writing to the same memory we can solve by double-buffering - agents can read each other's *front* data while their *back* data is being built. In the cellular automata example above that would mean we have to split the `state` variable into *back* and *front* parts. We only read from the *front* variable and only write to the *back* variable:
 
 ```
+# first pass
 foreach cell in cells
-    if cell.left_neighbor.front_state == '+' or cell.right_neighbor.front_state == '+'
-        cell.back_state = '+'
+    if cell.left_neighbor.front_state == 1 or cell.right_neighbor.front_state == 1
+        cell.back_state = 1
 ```
 
-and after all "back" values are updated, "front" values can be updated from them (buffer swap):
+and after all *back* values are updated, *front* values can be updated from them (buffer swap):
 
 ```
+# second pass
 foreach cell in cells
     cell.front_state = cell.back_state
 ```
 
-#### Write/write
+#### Write/write (accumulation)
 
-So after we double-buffered the variables we can still see that the innermost statement of the "back" buffer building pass contains an assignment, which means that we still have the problem of writing to the same memory from different logical processes.
+So after we double-buffered the variables we can still see that the innermost statement of the *back* buffer building pass contains an assignment, which means that we could still have the problem of writing to the same memory from different logical processes.
 
-Writing to same memory form different logical processes can be solved by accumulation - when "back" data is being built we have to make sure that operations building it are [commutative](https://en.wikipedia.org/wiki/Commutative_property), in other words we can only use operations that produce the same result regardless of the ordering of their operands. In the above code `or` operator is commutative...
+Writing to the same memory form different logical processes can be solved by accumulation - when *back* data is being built we have to make sure that operations building it are [commutative](https://en.wikipedia.org/wiki/Commutative_property), in other words we can only use operations that produce the same result regardless of the ordering of their operands.
 
-Similarly we could write either `a += Ai` or `a *= Ai` but we cannot mix them, so:
+Simple examples of commutative operators are `+` and `*` and in the example the `or` operator is also commutative, so if we generalize the first pass from the example into:
+
+```
+foreach cell in cells
+    foreach neighbor in cell.neighbors
+        if cell.front_state or neighbor.front_state
+            cell.front_state = 1
+```
+
+we can unroll the inner loop into
+
+```
+foreach cell in cells
+    cell.front_state = cell.neighbors[0].front_state or cell.neighbors[1].front_state
+```
+
+where we can see that "building" a *back* buffer variable just means that the final value is the result of the same commutative operator being applied between all the operands in whichever order.
+
+Similarly we could write either `a += Ai` or `b *= Bi` which unroll to:
 
 ```
 a = A1 + A2 + A3 + ... + An
 b = B1 * B2 * B3 * ... * Bn
 ```
 
-works but `a += Ai` and `a *= Bi` doesn't because unrolled it would look like this:
-
-```
-a = (((A1 * B1 + A2) * B2 + A3) * B3 + ... + An) * Bn
-```
-
-does not. Obviously `a -= Ai` would not work because `-` is not commutative. Even collections work if we limit how they're updated and how their elements are inspected. When building a collection as part of the "back" buffer we can only allow adding elements to the collection. Then, when reading it as part of the "front" buffer we only have to ensure that whatever we want to do with its elements we do *equally* to *all* elements, no random access to specific elements.
+Obviously `a -= Ai` would not work because `-` is not commutative. Even collections can work as accumulators if we limit how they're updated and how their elements are accessed once the collection is filled up. When building a collection as part of the *back* buffer we can only allow adding elements to the collection. Then, in the second pass, when inspecting the collection's elements we only have to ensure that whatever we want to do with its elements we do *equally* to *all* elements, and no random access to specific elements is allowed.
 
 ## Concurrency safety in Ochre
 
-The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to comprehend while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
+The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to get the hang of while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
     1. which code belongs to which double-buffering phase,
     2. which memory (agent variables) belongs to which buffer (front/back),
     3. how operators and functions interact with data in terms of reading, writing and accumulation.
