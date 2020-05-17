@@ -90,15 +90,12 @@ Obviously `a -= Ai` would not work because `-` is not commutative. Even collecti
 ## Concurrency safety in Ochre
 
 The purpose of Ochre as a language is to ensure concurrency safety with a set of high-level rules based on double-buffering and accumulation. These rules should be easy to get the hang of while still being flexible enough for expressing various forms of agent interactions. For semantic analysis based on these rules the following information must be known:
-    1. which code belongs to which double-buffering phase,
-    2. which memory (agent variables) belongs to which buffer (front/back),
-    3. how operators and functions interact with data in terms of reading, writing and accumulation.
 
-1. Simulation steps are split into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit, allowing the Ochre runtime to distribute work among worker threads and synchronize them.
+1. **Which code belongs to which double-buffering phase:** simulation steps are split into interaction and action phases which correspond to the two double-buffering phases (accumulation and swap). Agent behavior code is written for specific phases, and all loops are implicit, allowing the Ochre runtime to distribute work among worker threads and synchronize them.
 
-2. All agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
+2. **Which memory (agent variables) belongs to which buffer (front/back):** all agent variables are declared as *front* or *back* variables, and each phase has its own set of rules how these variables can be used: if they can be read, written to or only accumulated.
 
-3. Each operator and function is annotated with information on how it uses its arguments and how its result can be used: read, write or accumulate.
+3. **How operators and functions interact with data in terms of reading, writing and accumulation:** each operator and function is annotated with information on how it uses its arguments and how its result can be used: read, write or accumulate.
 
 Following descriptions focus on some of the specifics of Ochre language and runtime but they are by no means comprehensive, they only illustrate the small subset of features relevant to preventing race conditions.
 
