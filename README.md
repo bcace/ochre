@@ -2,6 +2,8 @@
 
 Ochre is an [ABM](https://en.wikipedia.org/wiki/Agent-based_model) programming language focused on eliminating [race conditions](https://en.wikipedia.org/wiki/Race_condition) and keeping the code boilerplate-free. Ochre simulation runtime also supports multithreaded simulation execution, live coding and agent type modularity.
 
+![](res/Ochre Particles.gif)
+
 ## Race conditions in ABM
 
 This is the primary focus of Ochre because I believe that race conditions are ubiquitous in ABM, and ABM modeling tools that don't address race conditions in some way seem to me a bit... incomplete.
