@@ -69,14 +69,14 @@ foreach cell in cells
             cell.front_state = 1
 ```
 
-we can unroll the inner loop into
+we can unroll the inner loop into:
 
 ```
 foreach cell in cells
     cell.front_state = cell.neighbors[0].front_state or cell.neighbors[1].front_state
 ```
 
-where we can see that "building" a *back* buffer variable just means that the final value is the result of the same commutative operator being applied between all the operands in whichever order.
+where we can see that "building" a *back* buffer variable just means that its final value is the result of the same commutative operator being applied between all the operands (in this case neighbor cell states) in whichever order.
 
 Similarly we could write either `a += Ai` or `b *= Bi` which unroll to:
 
@@ -100,11 +100,9 @@ The purpose of Ochre as a language is to ensure concurrency safety with a set of
 
 3. Each operator and function is annotated with information on how it uses its arguments and how its result can be used: read, write or accumulate.
 
-#### Anatomy of an Ochre agent type
+Following descriptions focus on some of the specifics of Ochre language and runtime but they are by no means comprehensive, they only illustrate the small subset of features relevant to preventing race conditions.
 
-{{{ a description of what this language actually looks like, very simplified, lots of stuff missing for simplicity }}}
-
-Each agent type is defined in its own file, and the file is divided into sections. First section contains the Type name and declaration of agent and type variables. Agent variable is a *back* variable if the first character is lowercase, and a *front* variable if uppercase.
+In Ochre, each agent type is defined in its own file and the file is divided into sections. First section contains the type name and declaration of agent and type variables. Agent variable is a *back* variable if the first character is lowercase, and a *front* variable if uppercase.
 
 ```
 TypeA # first non-comment line is the type name
@@ -116,7 +114,7 @@ TypeA # first non-comment line is the type name
 
 **Interaction sections**
 
-Multiple interaction sections can be defined, but they are all part of the simulation step phase where back buffers are accumulated. Interaction sections are just blocks of code, and they act on pairs of agents: `this` and `other` (`this` reference can be omitted (implicit)). Interaction code is always written from the perspective of the `this` agent, and it will be executed for all agents of the type.
+Multiple interaction sections can be defined, but they are all part of the simulation step phase where *back* buffers are accumulated. Interaction sections are just blocks of code, and they act on pairs of agents: `this` and `other` (`this` reference can be omitted (implicit)). Interaction code is always written from the perspective of the `this` agent, and it will be executed for all agents of the type.
 
 ```
 see TypeA
@@ -132,39 +130,40 @@ In this snippet *front* variables (`[this.]Position` and `other.Position`) are b
 | this | read | accumulate
 | other | read | -
 
-Which agents are going to be the `other` agent in that section is determined by the section statement argument (`see TypeA`). If type name is used, any agent of that type close enough to `this` agent will be the `other` agent. How close the agents have to be is determined by the size of the environment grid cell size. Agents can interact with other agents in the same cell or the neighboring cells.
+Which agents are going to be the `other` agent in that section is determined by the section statement argument (`see TypeA`). If type name is used, any agent of that type close enough to `this` agent will be the `other` agent. How close the agents have to be is determined by the size of the environment grid cell size. Agents can interact with other agents in the same cell or the adjacent cells (if the grid has only one cell all agents interact; also, agents can exist outside the grid but the interaction culling will not be as effective).
 
 ```
 # interaction with agents of the same type
 see TypeA
-    # "this" will be a reference to a TypeA agent
-    # "other" will be a reference to a different TypeA agent
+    # "this" will reference a TypeA agent
+    # "other" will reference a different TypeA agent
 
 # interaction with agents of type TypeB
 # ignored if TypeB is not loaded into the Ochre environment
 see TypeB
-    # "this" will be a reference to a TypeA agent
-    # "other" will be a reference to a TypeB agent
+    # "this" will reference a TypeA agent
+    # "other" will reference a TypeB agent
 ```
 
-Another way of specifying which agents will interact is through direct references. Agents can have collections of agent references as its variables, and interaction section is declared by just passing the variable name as the `see` statement argument:
+Another way of specifying which agents will interact is through direct references. Agents can have collections of agent references as part of their state, and interaction section is declared by just passing the variable name as the `see` statement argument:
 
 ```
 see collectionOfAgents
-    # "this" will be a reference to a TypeA agent
-    # "other" will be a reference to one of the agents in collectionOfAgents
+    # "this" will reference a TypeA agent
+    # "other" will reference one of the agents in collectionOfAgents
 ```
 
 **Action section**
 
-An agent type can have only one action phase section (`act`) and it's simply a block of code that's executed for each agent, and the Ochre runtime decides how to distribute agents among worker threads.
+Agent type can have only one action phase section (`act`) and this is the section that corresponds to the swap double-buffering phase, where the *front* buffer gets updated from the *back* buffer:
 
 ```
 act
-    # at each simulation step each agent moves by 1 along x axis
-    P.x += 1
+    # *very* simplistic point mass dynamics
+    point acceleration = accumulatedForce / mass
+    velocity += acceleration * dt
+    P += velocity * dt
+    accumulatedForce = 0 # don't forget to reset the back buffer for the next accumulation
 ```
 
-**Grid**
-
-...
+Since in this section agents are not allowed to communicate in any way they can freely read from and write to any of their variables.
